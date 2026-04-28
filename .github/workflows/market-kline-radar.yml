@@ -2,7 +2,7 @@ name: Market kline radar
 
 on:
   schedule:
-    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
+    - cron: "2,17,32,47 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -138,9 +138,9 @@ jobs:
             --volume-top-n 40 \
             --gainer-top-n 25 \
             --min-volume-quote 50000000 \
-            --min-gainer-volume-quote 20000000 \
-            --min-gain-pct 12 \
+            --min-gainer-volume-quote 25000000 \
+            --min-gain-pct 5 \
             --seen-ttl-hours 6 \
-            --max-alerts 8 \
+            --max-alerts 0 \
             --state-file .cache/market_kline_radar_state.json \
             --chart-dir "$RUNNER_TEMP/market_kline_radar_charts"

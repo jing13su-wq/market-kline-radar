@@ -12,7 +12,7 @@ $Action = New-ScheduledTaskAction `
 $Trigger = New-ScheduledTaskTrigger `
   -Once `
   -At (Get-Date).AddMinutes(1) `
-  -RepetitionInterval (New-TimeSpan -Minutes 5) `
+  -RepetitionInterval (New-TimeSpan -Minutes 15) `
   -RepetitionDuration (New-TimeSpan -Days 3650)
 
 $Settings = New-ScheduledTaskSettingsSet `
@@ -26,7 +26,7 @@ Register-ScheduledTask `
   -Action $Action `
   -Trigger $Trigger `
   -Settings $Settings `
-  -Description "Run Market Kline Radar every 5 minutes while this Windows machine is on." `
+  -Description "Run Market Kline Radar every 15 minutes while this Windows machine is on." `
   -Force
 
 Write-Host "Registered scheduled task: $TaskName"

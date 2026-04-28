@@ -49,7 +49,7 @@ python .\scanner.py --once --dry-run --exchange bybit-linear --test-symbol SOLUS
 
 ## Windows 定时任务
 
-如果你希望电脑开着时后台每 5 分钟扫一次：
+如果你希望电脑开着时后台每 15 分钟扫一次：
 
 ```powershell
 .\scripts\register_windows_task.ps1
@@ -71,7 +71,7 @@ python .\scanner.py --once --dry-run --exchange bybit-linear --test-symbol SOLUS
    - 24h 成交额不低于 `--min-volume-quote`
 
 2. 有成交额支撑的涨幅榜币
-   - 24h 涨幅不低于 `--min-gain-pct`
+   - 24h 涨幅大于 `--min-gain-pct`
    - 24h 成交额不低于 `--min-gainer-volume-quote`
    - 取涨幅榜前 `--gainer-top-n`
 
@@ -86,10 +86,10 @@ python .\scanner.py --once --dry-run --exchange bybit-linear --test-symbol SOLUS
 - `--volume-top-n`: 成交额榜前 N，默认 `40`
 - `--gainer-top-n`: 涨幅榜前 N，默认 `25`
 - `--min-volume-quote`: 成交额榜信号的最低 24h 成交额，默认 `50000000`
-- `--min-gainer-volume-quote`: 涨幅榜信号的最低 24h 成交额，默认 `20000000`
-- `--min-gain-pct`: 涨幅榜最低 24h 涨幅，默认 `12`
+- `--min-gainer-volume-quote`: 涨幅榜信号的最低 24h 成交额，默认 `25000000`
+- `--min-gain-pct`: 涨幅榜最低 24h 涨幅，默认 `5`，必须大于该值才触发
 - `--seen-ttl-hours`: 同一币种同一触发类型的重复推送抑制时间，默认 `6`
-- `--max-alerts`: 每轮最多推送图片数，默认 `8`
+- `--max-alerts`: 每轮最多推送图片数，默认 `0`，表示不限数量
 
 ## GitHub Actions
 

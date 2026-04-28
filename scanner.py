@@ -254,7 +254,7 @@ def select_candidates(
     for rank, item in enumerate(gainer_ranked, start=1):
         if rank > gainer_top_n:
             break
-        if item.price_change_pct < min_gain_pct:
+        if item.price_change_pct <= min_gain_pct:
             continue
         if item.quote_volume < min_gainer_volume_quote:
             continue
@@ -296,6 +296,8 @@ def reason_keys(candidate: Candidate) -> list[str]:
 def fresh_candidates(candidates: list[Candidate], state: dict[str, Any], max_alerts: int) -> list[Candidate]:
     seen = state.setdefault("seen", {})
     fresh = [item for item in candidates if any(f"{item.symbol}:{key}" not in seen for key in reason_keys(item))]
+    if max_alerts <= 0:
+        return fresh
     return fresh[:max_alerts]
 
 
@@ -333,10 +335,10 @@ def candidate_reason_text(candidate: Candidate) -> str:
     return "；".join(parts) or candidate.reason
 
 
-def format_caption(candidate: Candidate, interval: str, exchange: str) -> str:
+def format_caption(candidate: Candidate) -> str:
     lines = [
-        f"{candidate.symbol} {interval} K线",
-        f"推送原因：{candidate_reason_text(candidate)}",
+        candidate.symbol,
+        candidate_reason_text(candidate),
     ]
     if candidate.price_change_pct:
         lines.append(f"24h涨幅：{candidate.price_change_pct:+.2f}%")
@@ -344,7 +346,6 @@ def format_caption(candidate: Candidate, interval: str, exchange: str) -> str:
         lines.append(f"24h成交额：{compact_money(candidate.quote_volume)}")
     if candidate.volume_rank and "volume_new" not in candidate.reason:
         lines.append(f"成交量排名：#{candidate.volume_rank}")
-    lines.append(f"数据源：{exchange}")
     return "\n".join(lines)
 
 
@@ -575,7 +576,7 @@ def run_once(args: argparse.Namespace) -> int:
         try:
             candles = fetch_klines(args.exchange, item.symbol, args.interval, args.chart_limit)
             image_path = render_candles(item.symbol, candles, args.interval, chart_dir, args.candle_width_scale)
-            caption = format_caption(item, args.interval, args.exchange)
+            caption = format_caption(item)
             if args.dry_run:
                 print(
                     f"[dry-run] {item.symbol} {candidate_reason_text(item)} "
@@ -610,7 +611,7 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser.add_argument("--once", action="store_true", help="Run one scan and exit.")
     parser.add_argument("--loop", action="store_true", help="Keep scanning forever.")
     parser.add_argument("--dry-run", action="store_true", help="Render charts and print candidates without Telegram sends.")
-    parser.add_argument("--interval-minutes", type=float, default=5.0, help="Loop interval in minutes.")
+    parser.add_argument("--interval-minutes", type=float, default=15.0, help="Loop interval in minutes.")
     parser.add_argument("--interval", default="15m", help="Kline interval, for example 5m, 15m, 1h.")
     parser.add_argument("--exchange", choices=["bybit-linear", "binance-futures"], default="bybit-linear")
     parser.add_argument("--chart-limit", type=int, default=180, help="Number of candles per chart.")
@@ -622,12 +623,12 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser.add_argument(
         "--min-gainer-volume-quote",
         type=float,
-        default=20_000_000,
+        default=25_000_000,
         help="Minimum 24h quote volume for gainer signals.",
     )
-    parser.add_argument("--min-gain-pct", type=float, default=12.0, help="Minimum 24h gain percent for gainer signals.")
+    parser.add_argument("--min-gain-pct", type=float, default=5.0, help="Minimum 24h gain percent for gainer signals; signal must be greater than this value.")
     parser.add_argument("--seen-ttl-hours", type=float, default=6.0, help="Suppress repeated symbol/reason alerts for this many hours.")
-    parser.add_argument("--max-alerts", type=int, default=8, help="Maximum charts to push per scan.")
+    parser.add_argument("--max-alerts", type=int, default=0, help="Maximum charts to push per scan. Use 0 for unlimited.")
     parser.add_argument("--state-file", default="state.json", help="State JSON path.")
     parser.add_argument("--chart-dir", default="charts", help="Rendered chart output directory.")
     parser.add_argument("--reset-state", action="store_true", help="Clear local rank and dedupe state before scanning.")

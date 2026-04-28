@@ -3,4 +3,4 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-python .\scanner.py --loop --interval-minutes 5 --exchange bybit-linear --chart-limit 180
+python .\scanner.py --loop --interval-minutes 15 --exchange bybit-linear --chart-limit 180 --min-gain-pct 5 --min-gainer-volume-quote 25000000 --max-alerts 0
