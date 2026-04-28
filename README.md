@@ -63,6 +63,36 @@ python .\scanner.py --once --dry-run --exchange bybit-linear --test-symbol SOLUS
 
 注意：Windows 定时任务不能在电脑关机时运行。想不依赖本机开机，需要放到 VPS 或 GitHub self-hosted runner。
 
+## Telegram Bot 指令
+
+注册 bot 指令菜单：
+
+```powershell
+.\scripts\register_bot_commands.ps1
+```
+
+前台启动命令监听器：
+
+```powershell
+.\scripts\run_bot.ps1
+```
+
+启动后，在 Telegram 里发送：
+
+```text
+/top10
+```
+
+bot 会发送当前 24h 涨幅榜 Top10 的所有 K 线图。也可以指定周期：
+
+```text
+/top10 5m
+/top10 15m
+/top10 1h
+```
+
+命令监听器需要保持运行；关闭窗口后 bot 不再响应指令。定时扫描和命令监听器是两件事，可以同时运行。
+
 ## 信号逻辑
 
 1. 成交额榜新进币
