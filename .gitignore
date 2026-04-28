@@ -1,0 +1,6 @@
+.env
+.cache/
+charts/
+state.json
+*.log
+__pycache__/
