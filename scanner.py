@@ -79,6 +79,20 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
+def load_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
 def request_json(base_url: str, path: str, params: dict[str, Any] | None = None, timeout: int = 20) -> Any:
     response = requests.get(
         f"{base_url}{path}",
@@ -439,6 +453,9 @@ def send_telegram_photo(token: str, chat_id: str, image_path: Path, caption: str
 
 
 def run_once(args: argparse.Namespace) -> int:
+    load_dotenv(Path(__file__).resolve().with_name(".env"))
+    load_dotenv(Path.cwd() / ".env")
+
     state_path = Path(args.state_file)
     chart_dir = Path(args.chart_dir)
 
@@ -495,6 +512,9 @@ def run_once(args: argparse.Namespace) -> int:
             print(f"[warn] {item.symbol} skipped: {exc}", file=sys.stderr)
 
     if args.test_symbol:
+        if not sent_or_rendered:
+            print("[test] no chart was sent or rendered", file=sys.stderr)
+            return 1
         print("[test] state not updated")
     elif args.dry_run:
         print("[dry-run] state not updated")
@@ -527,8 +547,8 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser.add_argument("--min-gain-pct", type=float, default=12.0, help="Minimum 24h gain percent for gainer signals.")
     parser.add_argument("--seen-ttl-hours", type=float, default=6.0, help="Suppress repeated symbol/reason alerts for this many hours.")
     parser.add_argument("--max-alerts", type=int, default=8, help="Maximum charts to push per scan.")
-    parser.add_argument("--state-file", default="market_kline_radar/state.json", help="State JSON path.")
-    parser.add_argument("--chart-dir", default="market_kline_radar/charts", help="Rendered chart output directory.")
+    parser.add_argument("--state-file", default="state.json", help="State JSON path.")
+    parser.add_argument("--chart-dir", default="charts", help="Rendered chart output directory.")
     parser.add_argument("--reset-state", action="store_true", help="Clear local rank and dedupe state before scanning.")
     parser.add_argument(
         "--bootstrap-volume-alerts",
