@@ -73,6 +73,10 @@ class Candidate:
     symbol: str
     reason: str
     rank: int
+    volume_rank: int | None = None
+    gainer_rank: int | None = None
+    quote_volume: float = 0.0
+    price_change_pct: float = 0.0
 
 
 def utc_stamp() -> str:
@@ -229,14 +233,22 @@ def select_candidates(
     volume_ranked = sorted(rows, key=lambda item: item.quote_volume, reverse=True)
     current_volume_top = [item.symbol for item in volume_ranked[:volume_top_n]]
     previous_volume_top = set(state.get("volume_top") or [])
+    volume_ranks = {item.symbol: rank for rank, item in enumerate(volume_ranked, start=1)}
 
-    candidates: dict[tuple[str, str], Candidate] = {}
+    candidates: dict[str, Candidate] = {}
     if previous_volume_top or bootstrap_volume_alerts:
         for rank, item in enumerate(volume_ranked[:volume_top_n], start=1):
             if item.quote_volume < min_volume_quote:
                 continue
             if item.symbol not in previous_volume_top:
-                candidates[(item.symbol, "volume_new")] = Candidate(item.symbol, "volume_new", rank)
+                candidates[item.symbol] = Candidate(
+                    symbol=item.symbol,
+                    reason="volume_new",
+                    rank=rank,
+                    volume_rank=rank,
+                    quote_volume=item.quote_volume,
+                    price_change_pct=item.price_change_pct,
+                )
 
     gainer_ranked = sorted(rows, key=lambda item: item.price_change_pct, reverse=True)
     for rank, item in enumerate(gainer_ranked, start=1):
@@ -246,18 +258,44 @@ def select_candidates(
             continue
         if item.quote_volume < min_gainer_volume_quote:
             continue
-        candidates[(item.symbol, "gainer")] = Candidate(item.symbol, "gainer", rank)
+        existing = candidates.get(item.symbol)
+        if existing:
+            candidates[item.symbol] = Candidate(
+                symbol=item.symbol,
+                reason="volume_new+gainer",
+                rank=min(existing.rank, rank),
+                volume_rank=existing.volume_rank or volume_ranks.get(item.symbol),
+                gainer_rank=rank,
+                quote_volume=item.quote_volume,
+                price_change_pct=item.price_change_pct,
+            )
+        else:
+            candidates[item.symbol] = Candidate(
+                symbol=item.symbol,
+                reason="gainer",
+                rank=rank,
+                volume_rank=volume_ranks.get(item.symbol),
+                gainer_rank=rank,
+                quote_volume=item.quote_volume,
+                price_change_pct=item.price_change_pct,
+            )
 
     ordered = sorted(
         candidates.values(),
-        key=lambda item: (0 if item.reason == "volume_new" else 1, item.rank, item.symbol),
+        key=lambda item: (0 if "volume_new" in item.reason else 1, item.rank, item.symbol),
     )
     return ordered, current_volume_top
 
 
+def reason_keys(candidate: Candidate) -> list[str]:
+    if candidate.reason == "volume_new+gainer":
+        return ["volume_new", "gainer"]
+    return [candidate.reason]
+
+
 def fresh_candidates(candidates: list[Candidate], state: dict[str, Any], max_alerts: int) -> list[Candidate]:
     seen = state.setdefault("seen", {})
-    fresh = [item for item in candidates if f"{item.symbol}:{item.reason}" not in seen]
+    fresh = [item for item in candidates if any(f"{item.symbol}:{key}" not in seen for key in reason_keys(item))]
     return fresh[:max_alerts]
 
 
@@ -265,12 +303,49 @@ def mark_seen(candidates: list[Candidate], state: dict[str, Any]) -> None:
     stamp = int(time.time())
     seen = state.setdefault("seen", {})
     for item in candidates:
-        seen[f"{item.symbol}:{item.reason}"] = {
-            "last_alerted_at": stamp,
-            "symbol": item.symbol,
-            "reason": item.reason,
-            "rank": item.rank,
-        }
+        for key in reason_keys(item):
+            seen[f"{item.symbol}:{key}"] = {
+                "last_alerted_at": stamp,
+                "symbol": item.symbol,
+                "reason": key,
+                "rank": item.rank,
+            }
+
+
+def compact_money(value: float) -> str:
+    if value >= 1_000_000_000:
+        return f"${value / 1_000_000_000:.2f}B"
+    if value >= 1_000_000:
+        return f"${value / 1_000_000:.2f}M"
+    if value >= 1_000:
+        return f"${value / 1_000:.1f}K"
+    return f"${value:.0f}"
+
+
+def candidate_reason_text(candidate: Candidate) -> str:
+    parts = []
+    if "volume_new" in candidate.reason and candidate.volume_rank:
+        parts.append(f"成交量新进榜 #{candidate.volume_rank}")
+    if "gainer" in candidate.reason and candidate.gainer_rank:
+        parts.append(f"涨幅榜 #{candidate.gainer_rank}")
+    if candidate.reason == "test":
+        parts.append("手动测试")
+    return "；".join(parts) or candidate.reason
+
+
+def format_caption(candidate: Candidate, interval: str, exchange: str) -> str:
+    lines = [
+        f"{candidate.symbol} {interval} K线",
+        f"推送原因：{candidate_reason_text(candidate)}",
+    ]
+    if candidate.price_change_pct:
+        lines.append(f"24h涨幅：{candidate.price_change_pct:+.2f}%")
+    if candidate.quote_volume:
+        lines.append(f"24h成交额：{compact_money(candidate.quote_volume)}")
+    if candidate.volume_rank and "volume_new" not in candidate.reason:
+        lines.append(f"成交量排名：#{candidate.volume_rank}")
+    lines.append(f"数据源：{exchange}")
+    return "\n".join(lines)
 
 
 def binance_fetch_klines(symbol: str, interval: str, limit: int) -> list[Candle]:
@@ -500,12 +575,18 @@ def run_once(args: argparse.Namespace) -> int:
         try:
             candles = fetch_klines(args.exchange, item.symbol, args.interval, args.chart_limit)
             image_path = render_candles(item.symbol, candles, args.interval, chart_dir, args.candle_width_scale)
-            caption = f"{item.symbol} {args.interval} Kline"
+            caption = format_caption(item, args.interval, args.exchange)
             if args.dry_run:
-                print(f"[dry-run] {item.symbol} reason={item.reason} rank={item.rank} chart={image_path}")
+                print(
+                    f"[dry-run] {item.symbol} {candidate_reason_text(item)} "
+                    f"24h={item.price_change_pct:+.2f}% volume={compact_money(item.quote_volume)} chart={image_path}"
+                )
             else:
                 send_telegram_photo(token, chat_id, image_path, caption)
-                print(f"[sent] {item.symbol} reason={item.reason} rank={item.rank}")
+                print(
+                    f"[sent] {item.symbol} {candidate_reason_text(item)} "
+                    f"24h={item.price_change_pct:+.2f}% volume={compact_money(item.quote_volume)}"
+                )
             sent_or_rendered.append(item)
             time.sleep(args.sleep)
         except Exception as exc:  # noqa: BLE001 - keep the scan moving.
