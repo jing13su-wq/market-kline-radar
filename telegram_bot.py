@@ -65,29 +65,30 @@ def set_commands(token: str) -> None:
         {
             "commands": [
                 {"command": "top10", "description": "发送当前24h涨幅榜Top10 K线图"},
+                {"command": "top20", "description": "发送当前24h涨幅榜第11-20名K线图"},
                 {"command": "help", "description": "查看可用指令"},
             ]
         },
     )
 
 
-def parse_top10_args(text: str, default_interval: str) -> str:
+def parse_rank_command_args(text: str, default_interval: str, command_name: str) -> str:
     parts = text.split()
     if len(parts) < 2:
         return default_interval
     interval = parts[1].strip().lower()
     if interval not in ALLOWED_INTERVALS:
-        raise ValueError("周期只支持 5m、15m、1h，例如：/top10 15m")
+        raise ValueError(f"周期只支持 5m、15m、1h，例如：/{command_name} 15m")
     return interval
 
 
-def top_gainer_candidates(exchange: str, top_n: int, excluded_bases: set[str]) -> list[Candidate]:
+def top_gainer_candidates(exchange: str, start_rank: int, end_rank: int, excluded_bases: set[str]) -> list[Candidate]:
     rows = tickers(exchange, excluded_bases)
     volume_rank = {
         item.symbol: rank
         for rank, item in enumerate(sorted(rows, key=lambda item: item.quote_volume, reverse=True), start=1)
     }
-    gainers = sorted(rows, key=lambda item: item.price_change_pct, reverse=True)[:top_n]
+    gainers = sorted(rows, key=lambda item: item.price_change_pct, reverse=True)[start_rank - 1 : end_rank]
     return [
         Candidate(
             symbol=item.symbol,
@@ -98,17 +99,24 @@ def top_gainer_candidates(exchange: str, top_n: int, excluded_bases: set[str]) -
             quote_volume=item.quote_volume,
             price_change_pct=item.price_change_pct,
         )
-        for rank, item in enumerate(gainers, start=1)
+        for rank, item in enumerate(gainers, start=start_rank)
     ]
 
 
-def send_top10(token: str, chat_id: str, args: argparse.Namespace, interval: str) -> None:
+def send_gainer_range(
+    token: str,
+    chat_id: str,
+    args: argparse.Namespace,
+    interval: str,
+    start_rank: int,
+    end_rank: int,
+) -> None:
     excluded_bases = {item.strip().upper() for item in args.exclude_bases.split(",") if item.strip()}
-    candidates = top_gainer_candidates(args.exchange, args.top_n, excluded_bases)
+    candidates = top_gainer_candidates(args.exchange, start_rank, end_rank, excluded_bases)
     send_message(
         token,
         chat_id,
-        f"开始发送24h涨幅榜Top{len(candidates)} K线图\n周期：{interval}\n时间：{utc_stamp()}",
+        f"开始发送24h涨幅榜第{start_rank}-{end_rank}名K线图\n周期：{interval}\n时间：{utc_stamp()}",
     )
     chart_dir = Path(args.chart_dir)
     for candidate in candidates:
@@ -127,9 +135,11 @@ def help_text() -> str:
         [
             "可用指令：",
             "/top10 - 发送当前24h涨幅榜Top10的K线图",
+            "/top20 - 发送当前24h涨幅榜第11-20名的K线图",
             "/top10 5m - 使用5m K线",
             "/top10 15m - 使用15m K线",
             "/top10 1h - 使用1h K线",
+            "/top20 15m - 发送第11-20名，使用15m K线",
         ]
     )
 
@@ -148,8 +158,11 @@ def handle_message(token: str, allowed_chat_id: str, args: argparse.Namespace, m
     command = text.split()[0].split("@", 1)[0].lower()
     try:
         if command == "/top10":
-            interval = parse_top10_args(text, args.interval)
-            send_top10(token, chat_id, args, interval)
+            interval = parse_rank_command_args(text, args.interval, "top10")
+            send_gainer_range(token, chat_id, args, interval, 1, 10)
+        elif command == "/top20":
+            interval = parse_rank_command_args(text, args.interval, "top20")
+            send_gainer_range(token, chat_id, args, interval, 11, 20)
         elif command == "/help" or command == "/start":
             send_message(token, chat_id, help_text())
     except Exception as exc:  # noqa: BLE001 - report command failures to chat.
@@ -190,7 +203,6 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser.add_argument("--register-only", action="store_true", help="Set Telegram bot commands and exit.")
     parser.add_argument("--exchange", choices=["bybit-linear", "binance-futures"], default="bybit-linear")
     parser.add_argument("--interval", choices=sorted(ALLOWED_INTERVALS), default="15m")
-    parser.add_argument("--top-n", type=int, default=10, help="Number of top gainers to send.")
     parser.add_argument("--chart-limit", type=int, default=180)
     parser.add_argument("--candle-width-scale", type=float, default=0.48)
     parser.add_argument("--chart-dir", default="charts")
