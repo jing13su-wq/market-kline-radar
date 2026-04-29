@@ -63,6 +63,30 @@ python .\scanner.py --once --dry-run --exchange bybit-linear --test-symbol SOLUS
 
 注意：Windows 定时任务不能在电脑关机时运行。想不依赖本机开机，需要放到 VPS 或 GitHub self-hosted runner。
 
+如果计划任务权限被 Windows 拒绝，可以使用当前用户登录自启动：
+
+```powershell
+.\scripts\register_login_startup.ps1
+```
+
+它会在你登录 Windows 后自动启动两件事：
+
+- Telegram 指令监听器
+- 15 分钟自动扫描循环
+
+取消登录自启动：
+
+```powershell
+.\scripts\unregister_login_startup.ps1
+```
+
+对应日志：
+
+```text
+bot.out.log / bot.err.log
+scan.out.log / scan.err.log
+```
+
 ## Telegram Bot 指令
 
 注册 bot 指令菜单：
